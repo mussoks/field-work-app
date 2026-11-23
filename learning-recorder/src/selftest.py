@@ -80,8 +80,11 @@ def run(argv) -> int:
     result["ok"] = (not v30["error"] and not v15["error"] and v30["bytes"] > 0 and v15["bytes"] > 0
                     and 75 <= v30["frames"] <= 110 and 38 <= v15["frames"] <= 55
                     and "01.png" in result["capture"]["files"] and "가이드.html" in result["capture"]["files"])
-    print(json.dumps(result, ensure_ascii=False, indent=1))
     (out / "selftest_result.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
+    try:  # 콘솔 인코딩(cp1252 등)에서도 깨지지 않게 ASCII 로 출력
+        print(json.dumps(result, ensure_ascii=True, indent=1))
+    except Exception:
+        pass
     return 0 if result["ok"] else 1
 
 
