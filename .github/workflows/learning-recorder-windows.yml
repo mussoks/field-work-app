@@ -44,8 +44,12 @@ jobs:
         shell: pwsh
         run: |
           $out = "$env:RUNNER_TEMP\selftest_exe"
-          $p = Start-Process -FilePath "dist\LearningRecorder.exe" -ArgumentList "--selftest", "`"$out`"" -Wait -PassThru
-          Get-Content "$out\selftest_result.json" -Encoding utf8
+          $p = Start-Process -FilePath "dist\LearningRecorder.exe" -ArgumentList "--selftest", "`"$out`"" -PassThru
+          if (-not $p.WaitForExit(240000)) { Stop-Process -Id $p.Id -Force; Write-Host "TIMEOUT" }
+          Get-ChildItem $out -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.Name }
+          foreach ($f in "selftest_progress.txt", "selftest_error.txt", "selftest_faulthandler.txt", "selftest_result.json") {
+            if (Test-Path "$out\$f") { Write-Host "===== $f"; Get-Content "$out\$f" -Encoding utf8 }
+          }
           if ($p.ExitCode -ne 0) { throw "exe selftest failed: $($p.ExitCode)" }
 
       - name: Upload exe

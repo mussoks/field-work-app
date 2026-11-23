@@ -14,6 +14,32 @@ from pathlib import Path
 
 
 def run(argv) -> int:
+    """예외가 나도 (창 모드 exe 의 오류 대화상자로 멈추지 않도록) 파일에 기록하고 종료 코드로 알린다."""
+    args = [a for a in argv[1:] if not a.startswith("--")]
+    out = Path(args[0]) if args else Path(tempfile.mkdtemp(prefix="lr_selftest_"))
+    out.mkdir(parents=True, exist_ok=True)
+    progress = out / "selftest_progress.txt"
+
+    def log(msg):
+        with open(progress, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
+
+    try:
+        import faulthandler
+        fh = open(out / "selftest_faulthandler.txt", "w")
+        faulthandler.enable(fh)
+        faulthandler.dump_traceback_later(120, exit=True, file=fh)  # 멈추면 2분 뒤 스택 기록 후 종료
+    except Exception:
+        pass
+    try:
+        return _run(out, log)
+    except BaseException:
+        import traceback
+        (out / "selftest_error.txt").write_text(traceback.format_exc(), encoding="utf-8")
+        return 2
+
+
+def _run(out: Path, log) -> int:
     import cv2
 
     import winutil
@@ -23,9 +49,8 @@ def run(argv) -> int:
     from overlay import OverlayState
     from recorder import Recorder
 
-    args = [a for a in argv[1:] if not a.startswith("--")]
-    out = Path(args[0]) if args else Path(tempfile.mkdtemp(prefix="lr_selftest_"))
-    out.mkdir(parents=True, exist_ok=True)
+    import recorder as _rec
+    log(f"start frozen={getattr(sys, 'frozen', False)} ffmpeg={_rec.get_ffmpeg()}")
     s = Settings(save_root=str(out), save_event_log=True, countdown=False, key_overlay="특수키만")
     result = {"out": str(out), "ok": False}
 
@@ -40,6 +65,7 @@ def run(argv) -> int:
         rec = Recorder(video, rect, RESOLUTIONS["HD (1280x720)"], fps, QUALITY_PRESETS["표준"], ov, s,
                        cursor_fn=lambda: (cx, cy))
         rec.start()
+        log(f"recording {fps}fps")
         time.sleep(1.0)
         t = time.perf_counter()
         for e in ({"type": "mouse_down", "t": t, "x": cx, "y": cy, "button": "left", "double": False},
@@ -52,6 +78,7 @@ def run(argv) -> int:
         time.sleep(2.0)
         rec.stop()
         rec.join(60)
+        log(f"recorded {fps}fps error={rec.error} alive={rec.is_alive()}")
         cap = cv2.VideoCapture(str(video))
         frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -66,6 +93,7 @@ def run(argv) -> int:
                                   "frames": frames, "size": [w, h], "click_frame": click["frame"],
                                   "click_xy": [click["x"], click["y"]], "events": len(ev["events"])}
 
+    log("capture")
     cm = CaptureManager(s)
     s.set_name = "자가진단"
     with winutil.new_mss() as sct:
@@ -76,6 +104,7 @@ def run(argv) -> int:
     folder = cm.end_set()
     result["capture"] = {"folder": str(folder), "files": sorted(p.name for p in folder.rglob("*") if p.is_file())}
 
+    log("verify")
     v30, v15 = result["video_30"], result["video_15"]
     result["ok"] = (not v30["error"] and not v15["error"] and v30["bytes"] > 0 and v15["bytes"] > 0
                     and 75 <= v30["frames"] <= 110 and 38 <= v15["frames"] <= 55
