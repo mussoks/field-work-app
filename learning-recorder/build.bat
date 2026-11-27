@@ -26,6 +26,7 @@ pyinstaller --noconfirm --clean --windowed ^
   --paths src ^
   src\main.py || goto :fail
 
+if defined SKIP_INSTALLER goto :done
 set ISCC="%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
 if not exist %ISCC% set ISCC="%ProgramFiles%\Inno Setup 6\ISCC.exe"
 if not exist %ISCC% set ISCC="%LocalAppData%\Programs\Inno Setup 6\ISCC.exe"

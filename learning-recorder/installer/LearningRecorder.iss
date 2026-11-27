@@ -24,9 +24,10 @@ OutputBaseFilename=LearningRecorder-Setup-{#MyAppVersion}
 SetupIconFile=..\src\assets\icon.ico
 UninstallDisplayIcon={app}\{#MyAppExe}
 UninstallDisplayName={#MyAppName}
-Compression=lzma2/ultra64
+Compression=lzma2/max
 SolidCompression=yes
-LZMANumBlockThreads=4
+; 압축기를 별도(64비트) 프로세스로 돌려 메모리 부족을 피한다
+LZMAUseSeparateProcess=yes
 WizardStyle=modern
 WizardSizePercent=110
 ArchitecturesAllowed=x64compatible

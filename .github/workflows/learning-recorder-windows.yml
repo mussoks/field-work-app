@@ -37,8 +37,10 @@ jobs:
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
           if (-not (Test-Path $iscc)) { throw "Inno Setup not found" }
 
-      - name: Build app + installer (build.bat)
+      - name: Build app (build.bat)
         shell: cmd
+        env:
+          SKIP_INSTALLER: "1"
         run: build.bat
 
       - name: Self-test the built app
@@ -55,6 +57,11 @@ jobs:
           if (Test-Path "$env:APPDATA\LearningRecorder\error.log") { Get-Content "$env:APPDATA\LearningRecorder\error.log" -Encoding utf8 }
           if ($a -ne 0) { throw "selftest failed: $a" }
           if ($b -ne 0) { throw "ui smoketest failed: $b" }
+
+      - name: Build installer (Inno Setup)
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q /DMyAppVersion=0.2.0 installer\LearningRecorder.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed: $LASTEXITCODE" }
 
       - name: Install silently and test the installed app
         run: |
