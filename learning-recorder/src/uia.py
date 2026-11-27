@@ -25,6 +25,7 @@ TYPE_KO = {
     "DataGridControl": "표", "SpinnerControl": "숫자 상자", "SliderControl": "슬라이더",
 }
 _GENERIC = {"PaneControl", "WindowControl", "GroupControl", "CustomControl"}
+_PLAIN = _GENERIC | {"TextControl", "ImageControl", "DocumentControl"}
 
 
 class _Worker:
@@ -133,14 +134,20 @@ def suggest_note(info: dict | None, button: str = "left", double: bool = False) 
     verb = "더블클릭" if double else ("우클릭" if button == "right" else "클릭")
     if not info:
         return ""
-    name = info.get("name") or info.get("label") or info.get("context_name") or ""
+    name = (info.get("name") or info.get("label") or info.get("context_name") or "").strip()
+    name = " ".join(name.split())
+    if len(name) > 30:
+        name = name[:29] + "…"
     kind = info.get("type_ko", "")
-    if info.get("type") in _GENERIC and not name:
+    ctype = info.get("type")
+    if ctype in _GENERIC and not name:
         return ""
     if not name and not kind:
         return ""
-    if info.get("type") == "EditControl":
+    if ctype == "EditControl":
         return f"'{name}' 입력칸 {verb} 후 입력" if name else f"입력칸 {verb} 후 입력"
+    if ctype in _PLAIN:  # 글자·그림·영역 등은 종류를 붙이면 어색하다 → "'거래처명' 클릭"
+        return f"'{name}' {verb}" if name else ""
     if name and kind:
         return f"'{name}' {kind} {verb}"
     return f"'{name}' {verb}" if name else f"{kind} {verb}"

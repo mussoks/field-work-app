@@ -526,7 +526,7 @@ class LibraryPage(Page):
         self.body.addLayout(hbox(self.filter, None,
                                  button("저장 폴더 열기", "gray", "sm", lambda: open_path(self.c.root())),
                                  button("새로고침", "secondary", "sm", self.refresh)))
-        self.summary = label("", "caption")
+        self.summary = label("", "caption", wrap=True)
         self.body.addWidget(self.summary)
         self.card = Card(padding=14)
         self.list = QVBoxLayout()

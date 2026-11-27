@@ -74,6 +74,8 @@ def run_gui(argv) -> int:
     full_gc.start(30000)
 
     c = Controller()
+    if "--ui-smoketest" in argv:
+        c.s.onboarded = True  # 자동 점검 중에는 첫 실행 안내를 띄우지 않음
     w = MainWindow(c)
     if "--minimized" in argv and w.tray:
         w.hide()
