@@ -22,6 +22,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+import masking
+import uia
 import winutil
 
 RED = (230, 30, 30)
@@ -63,10 +65,16 @@ class GrabResult:
     source: str = "hotkey"      # hotkey | auto_click
     time: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
     prev_hwnd: int = 0
+    element: dict | None = None
+    double: bool = False
+
+    @property
+    def suggestion(self) -> str:
+        return uia.suggest_note(self.element, self.button, self.double)
 
 
 def grab_under_cursor(sct, cursor: tuple[int, int] | None, button: str = "left",
-                      source: str = "hotkey") -> GrabResult:
+                      source: str = "hotkey", masks=None, with_element: bool = True) -> GrabResult:
     """커서가 있는 모니터 전체를 캡쳐."""
     mons = sct.monitors[1:] or sct.monitors
     if cursor is None:
@@ -79,10 +87,13 @@ def grab_under_cursor(sct, cursor: tuple[int, int] | None, button: str = "left",
             break
     shot = sct.grab(mon)
     img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+    if masks:
+        img = masking.apply_pil(img, masks, (mon["left"], mon["top"]))
     hwnd = winutil.get_foreground_window()
+    element = uia.element_at(cx, cy) if with_element else None  # 화면을 먼저 잡은 뒤 조회
     return GrabResult(img, cx - mon["left"], cy - mon["top"], cx, cy, dict(mon),
                       winutil.get_window_title(hwnd), winutil.get_window_process_name(hwnd),
-                      button, source, prev_hwnd=hwnd)
+                      button, source, prev_hwnd=hwnd, element=element)
 
 
 # ---------------------------------------------------------------- 렌더링
@@ -221,6 +232,7 @@ class Step:
     source: str
     image_w: int
     image_h: int
+    element: dict | None = None
 
 
 class CaptureManager:
@@ -275,7 +287,7 @@ class CaptureManager:
         self._save_image(rendered, out)
         st = Step(n, out.name, str(raw.relative_to(self.folder)) if self.settings.save_raw else "",
                   note, g.x, g.y, g.screen_x, g.screen_y, g.button, g.window, g.process, g.time,
-                  g.source, g.image.width, g.image.height)
+                  g.source, g.image.width, g.image.height, g.element)
         self.steps.append(st)
         self._write_index()
         return st
@@ -332,6 +344,16 @@ class CaptureManager:
             "steps": [asdict(s) for s in self.steps],
         }
         (self.folder / "steps.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+        # 학습 데이터셋 (JSON Lines): 한 줄 = 한 단계
+        with open(self.folder / "dataset.jsonl", "w", encoding="utf-8") as f:
+            for s in self.steps:
+                f.write(json.dumps({
+                    "step": s.step, "image": s.raw_file or None, "marked": s.file,
+                    "action": "right_click" if s.button == "right" else "click",
+                    "x": s.x, "y": s.y, "x_norm": round(s.x / s.image_w, 5), "y_norm": round(s.y / s.image_h, 5),
+                    "width": s.image_w, "height": s.image_h, "instruction": s.note or uia.suggest_note(s.element, s.button),
+                    "window": s.window, "process": s.process, "element": s.element, "task": self.set_name,
+                }, ensure_ascii=False) + "\n")
         title = html.escape(self.set_name or self.folder.name)
         rows = []
         for s in self.steps:
@@ -339,7 +361,7 @@ class CaptureManager:
             rows.append(f"""
 <section>
   <h2><span class="n">{s.step}</span> {'우클릭' if s.button == 'right' else '클릭'} — {note}</h2>
-  <p class="meta">창: {html.escape(s.window or '-')} · 프로그램: {html.escape(s.process or '-')} · 좌표 ({s.x}, {s.y}) · {s.time}</p>
+  <p class="meta">창: {html.escape(s.window or '-')} · 프로그램: {html.escape(s.process or '-')} · 좌표 ({s.x}, {s.y}){(' · UI: ' + html.escape((s.element or {}).get('type_ko', '') + ' ' + repr((s.element or {}).get('name', '')))) if s.element else ''} · {s.time}</p>
   <img src="{html.escape(s.file)}" alt="단계 {s.step}">
 </section>""")
         doc = f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">

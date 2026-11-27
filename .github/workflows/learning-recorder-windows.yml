@@ -1,4 +1,4 @@
-name: learning-recorder (Windows build)
+name: learning-recorder (Windows installer)
 
 on:
   push:
@@ -15,6 +15,7 @@ jobs:
     defaults:
       run:
         working-directory: learning-recorder
+        shell: pwsh
     steps:
       - uses: actions/checkout@v4
 
@@ -22,47 +23,64 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Install dependencies (for source self-test)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install -r requirements.txt
 
       - name: Self-test from source (real screen record + capture)
         run: python src/main.py --selftest "$env:RUNNER_TEMP\selftest_src"
 
-      - name: Build exe
-        run: >
-          pyinstaller --noconfirm --clean --onefile --windowed
-          --name LearningRecorder
-          --collect-all imageio_ffmpeg
-          --hidden-import pynput.keyboard._win32
-          --hidden-import pynput.mouse._win32
-          --paths src
-          src/main.py
-
-      - name: Self-test the built exe
-        shell: pwsh
+      - name: Ensure Inno Setup 6
         run: |
-          $out = "$env:RUNNER_TEMP\selftest_exe"
-          $p = Start-Process -FilePath "dist\LearningRecorder.exe" -ArgumentList "--selftest", "`"$out`"" -PassThru
-          if (-not $p.WaitForExit(240000)) { Stop-Process -Id $p.Id -Force; Write-Host "TIMEOUT" }
-          Get-ChildItem $out -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.Name }
-          foreach ($f in "selftest_progress.txt", "selftest_error.txt", "selftest_faulthandler.txt", "selftest_result.json") {
-            if (Test-Path "$out\$f") { Write-Host "===== $f"; Get-Content "$out\$f" -Encoding utf8 }
-          }
-          if ($p.ExitCode -ne 0) { throw "exe selftest failed: $($p.ExitCode)" }
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup not found" }
 
-      - name: Upload exe
+      - name: Build app + installer (build.bat)
+        shell: cmd
+        run: build.bat
+
+      - name: Self-test the built app
+        run: |
+          function Run-Test($exe, $arg, $out, $files) {
+            $p = Start-Process -FilePath $exe -ArgumentList $arg, "`"$out`"" -PassThru
+            if (-not $p.WaitForExit(240000)) { Stop-Process -Id $p.Id -Force; Write-Host "TIMEOUT" }
+            foreach ($f in $files) { if (Test-Path "$out\$f") { Write-Host "===== $f"; Get-Content "$out\$f" -Encoding utf8 } }
+            return $p.ExitCode
+          }
+          $exe = "dist\LearningRecorder\LearningRecorder.exe"
+          $a = Run-Test $exe "--selftest" "$env:RUNNER_TEMP\selftest_exe" @("selftest_progress.txt", "selftest_error.txt", "selftest_result.json")
+          $b = Run-Test $exe "--ui-smoketest" "$env:RUNNER_TEMP\ui_shots" @("ui_error.txt", "ui_result.json")
+          if (Test-Path "$env:APPDATA\LearningRecorder\error.log") { Get-Content "$env:APPDATA\LearningRecorder\error.log" -Encoding utf8 }
+          if ($a -ne 0) { throw "selftest failed: $a" }
+          if ($b -ne 0) { throw "ui smoketest failed: $b" }
+
+      - name: Install silently and test the installed app
+        run: |
+          $setup = Get-ChildItem dist\LearningRecorder-Setup-*.exe | Select-Object -First 1
+          Write-Host "installer: $($setup.Name) $([math]::Round($setup.Length / 1MB, 1)) MB"
+          $dir = "$env:RUNNER_TEMP\installed"
+          $p = Start-Process $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CURRENTUSER", "/TASKS=desktopicon", "/DIR=`"$dir`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "install failed: $($p.ExitCode)" }
+          $out = "$env:RUNNER_TEMP\selftest_installed"
+          $q = Start-Process "$dir\LearningRecorder.exe" -ArgumentList "--selftest", "`"$out`"" -PassThru
+          if (-not $q.WaitForExit(240000)) { Stop-Process -Id $q.Id -Force; throw "installed selftest timeout" }
+          if ($q.ExitCode -ne 0) { throw "installed selftest failed: $($q.ExitCode)" }
+          $u = Start-Process "$dir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -Wait -PassThru
+          Write-Host "uninstall exit: $($u.ExitCode)"
+
+      - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: LearningRecorder-windows
-          path: learning-recorder/dist/LearningRecorder.exe
+          name: LearningRecorder-Setup
+          path: learning-recorder/dist/LearningRecorder-Setup-*.exe
 
-      - name: Upload self-test samples
+      - name: Upload test results (screenshots, samples)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: selftest-samples
+          name: test-results
           path: |
-            ${{ runner.temp }}/selftest_src
+            ${{ runner.temp }}/ui_shots
             ${{ runner.temp }}/selftest_exe

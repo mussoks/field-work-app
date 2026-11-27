@@ -157,8 +157,17 @@ def open_folder(path: Path) -> None:
         pass
 
 
+def asset_path(*parts: str) -> Path:
+    """번들 리소스 경로 (PyInstaller 실행 파일 / 소스 실행 모두)."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base.joinpath("assets", *parts)
+
+
 def font_path(bold: bool = False) -> str | None:
-    """한글 표시용 폰트 경로 (맑은 고딕 우선)."""
+    """한글 표시용 폰트 경로 (번들 Pretendard → 맑은 고딕 순)."""
+    bundled = asset_path("fonts", "Pretendard-Bold.otf" if bold else "Pretendard-Medium.otf")
+    if bundled.exists():
+        return str(bundled)
     candidates = []
     if IS_WIN:
         windir = os.environ.get("WINDIR", r"C:\Windows")

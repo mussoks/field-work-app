@@ -9,7 +9,7 @@ from pathlib import Path
 from winutil import desktop_dir
 
 APP_NAME = "학습용 화면녹화·캡쳐"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
 SAVE_FOLDER_NAME = "학습용캡쳐"
 
 # 화질(=용량) 프리셋: x264 CRF. 숫자가 클수록 용량이 작다.
@@ -31,6 +31,7 @@ def default_hotkeys() -> dict[str, str]:
         "end_set": "ctrl+shift+2",      # 연결된 캡쳐 세트 종료 → 번호 1번으로 초기화
         "record": "ctrl+shift+r",       # 녹화 시작/정지
         "pause": "ctrl+shift+p",        # 녹화 일시정지/재개
+        "undo": "ctrl+shift+z",         # 마지막 캡쳐 취소
     }
 
 
@@ -39,6 +40,7 @@ HOTKEY_LABELS = {
     "end_set": "캡쳐 세트 종료 (번호 초기화)",
     "record": "녹화 시작 / 정지",
     "pause": "녹화 일시정지 / 재개",
+    "undo": "마지막 캡쳐 취소",
 }
 
 
@@ -59,14 +61,24 @@ class Settings:
     countdown: bool = True            # 녹화 시작 전 3초 카운트다운
     optimize_after: bool = False      # 녹화 후 한 번 더 압축(느리지만 용량↓)
     marker_scale: float = 1.0         # 표시 크기 배율
+    save_click_frames: bool = True    # 클릭 직전 원본 프레임 + 표시 프레임 저장 (데이터셋)
+    uia_enabled: bool = True          # 클릭한 UI 요소(버튼 이름 등) 기록
+    mask_enabled: bool = False        # 개인정보 가리기
+    mask_regions: list = field(default_factory=list)  # [[l, t, w, h], ...] 화면 좌표
     # 캡쳐
     set_name: str = ""
     note_popup: bool = True           # 캡쳐 직후 각주 입력창
     auto_click_capture: bool = False  # 클릭할 때마다 자동 캡쳐
     save_raw: bool = True             # 표시 없는 원본도 함께 저장 (AI 학습용 쌍 데이터)
     image_format: str = "PNG"
+    auto_note: bool = True            # 각주를 비워두면 UI 요소로 추천 각주 자동 입력
+    recent_notes: list = field(default_factory=list)
+    recent_set_names: list = field(default_factory=list)
     # 공통
     exclude_self: bool = True         # 이 프로그램 창은 녹화/캡쳐에 안 찍히게
+    minimize_to_tray: bool = True     # 창을 닫으면 트레이로 (단축키는 계속 동작)
+    notify: bool = True               # 캡쳐/녹화 알림
+    onboarded: bool = False
     hotkeys: dict = field(default_factory=default_hotkeys)
 
     def root_dir(self) -> Path:

@@ -51,17 +51,21 @@ def _run(out: Path, log) -> int:
 
     import recorder as _rec
     log(f"start frozen={getattr(sys, 'frozen', False)} ffmpeg={_rec.get_ffmpeg()}")
-    s = Settings(save_root=str(out), save_event_log=True, countdown=False, key_overlay="특수키만")
+    s = Settings(save_root=str(out), save_event_log=True, countdown=False, key_overlay="특수키만",
+                 save_click_frames=True, mask_enabled=True)
     result = {"out": str(out), "ok": False}
 
     with winutil.new_mss() as sct:
         mon = dict(sct.monitors[1])
     rect = {k: mon[k] for k in ("left", "top", "width", "height")}
     cx, cy = rect["left"] + rect["width"] // 3, rect["top"] + rect["height"] // 3
+    s.mask_regions = [[rect["left"] + rect["width"] // 2, rect["top"], rect["width"] // 4, rect["height"] // 4]]
 
     for fps in (30, 15):
         ov = OverlayState(0.8, "특수키만")
-        video = out / f"selftest_{fps}fps.mp4"
+        vdir = out / f"selftest_{fps}fps"
+        vdir.mkdir(parents=True, exist_ok=True)
+        video = vdir / f"selftest_{fps}fps.mp4"
         rec = Recorder(video, rect, RESOLUTIONS["HD (1280x720)"], fps, QUALITY_PRESETS["표준"], ov, s,
                        cursor_fn=lambda: (cx, cy))
         rec.start()
@@ -89,7 +93,10 @@ def _run(out: Path, log) -> int:
         if ok:
             cv2.imwrite(str(out / f"selftest_{fps}fps_clickframe.png"), frame)
         cap.release()
+        ann = vdir / "클릭장면" / "annotations.jsonl"
         result[f"video_{fps}"] = {"error": rec.error, "bytes": video.stat().st_size if video.exists() else 0,
+                                  "thumb": (vdir / "thumb.jpg").exists(),
+                                  "click_frames": sorted(p.name for p in (vdir / "클릭장면").glob("*")) if ann.exists() else [],
                                   "frames": frames, "size": [w, h], "click_frame": click["frame"],
                                   "click_xy": [click["x"], click["y"]], "events": len(ev["events"])}
 
@@ -108,6 +115,9 @@ def _run(out: Path, log) -> int:
     v30, v15 = result["video_30"], result["video_15"]
     result["ok"] = (not v30["error"] and not v15["error"] and v30["bytes"] > 0 and v15["bytes"] > 0
                     and 75 <= v30["frames"] <= 110 and 38 <= v15["frames"] <= 55
+                    and v30["thumb"] and "annotations.jsonl" in v30["click_frames"]
+                    and "001_원본.png" in v30["click_frames"]
+                    and "dataset.jsonl" in result["capture"]["files"]
                     and "01.png" in result["capture"]["files"] and "가이드.html" in result["capture"]["files"])
     (out / "selftest_result.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     try:  # 콘솔 인코딩(cp1252 등)에서도 깨지지 않게 ASCII 로 출력
